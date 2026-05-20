@@ -62,32 +62,39 @@ def align_pyramid(img_base, img_to_align, min_size=32, window=15):
 
     return best_dx, best_dy
 
-def auto_crop(img):
+def auto_crop(img, margin=0.15):
     r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
-    
-    # 對每個色版做邊緣偵測
-    edge_r = filters.sobel(r)
-    edge_g = filters.sobel(g)
-    edge_b = filters.sobel(b)
-    
-    # 計算色版之間邊緣的差異
-    diff = np.abs(edge_r - edge_g) + np.abs(edge_g - edge_b) + np.abs(edge_r - edge_b)
-    
-    # 對每一行和每一列取平均差異
-    row_diff = diff.mean(axis=1)  # 每行的平均差異
-    col_diff = diff.mean(axis=0)  # 每列的平均差異
-    
-    # 用threshold找邊界
-    threshold = row_diff.mean()
-    
-    good_rows = np.where(row_diff < threshold)[0]
-    good_cols = np.where(col_diff < threshold)[0]
-    
-    top, bottom = good_rows[0], good_rows[-1]
-    left, right = good_cols[0], good_cols[-1]
-    
+    h, w = img.shape[:2]
+    search_h = int(h * margin)
+    search_w = int(w * margin)
+
+    top, bottom = 0, h
+
+    # 上下：每個 channel 的 sobel_h 峰值（水平板框邊界最強）
+    for ch in [r, g, b]:
+        row_edge = np.abs(filters.sobel_h(ch)).mean(axis=1)
+        ch_top    = int(np.argmax(row_edge[:search_h])) + 1
+        ch_bottom = h - 1 - int(np.argmax(row_edge[h - search_h:][::-1]))
+        top    = max(top,    ch_top)
+        bottom = min(bottom, ch_bottom)
+
+    # 左右：inter-channel 差異（偵測 np.roll 水平偏移造成的 channel 錯位）
+    diff = np.abs(r - g) + np.abs(g - b) + np.abs(r - b)
+    col_diff = diff.mean(axis=0)
+    interior = col_diff[search_w : w - search_w]
+    col_threshold = interior.mean() + 2 * interior.std()
+
+    left = 0
+    for i in range(search_w):
+        if col_diff[i] > col_threshold:
+            left = i + 1
+
+    right = w
+    for i in range(w - 1, w - 1 - search_w, -1):
+        if col_diff[i] > col_threshold:
+            right = i
+
     print(f"裁切範圍: top={top}, bottom={bottom}, left={left}, right={right}")
-    
     return img[top:bottom, left:right]
 
 dx_g, dy_g = align_pyramid(b, g)
@@ -104,5 +111,21 @@ r_aligned = np.roll(r_aligned, dx_r, axis=1)
 
 color_img = np.stack([r_aligned, g_aligned, b], axis=2)
 color_img_cropped = auto_crop(color_img)
-plt.imsave('output_cropped.jpg', color_img_cropped)
-print("已儲存 output_cropped.jpg")
+
+img_min = color_img_cropped.min()
+img_max = color_img_cropped.max()
+color_img_cropped = (color_img_cropped - img_min) / (img_max - img_min)
+
+# 自動白平衡：Gray World 假設（場景平均色應為灰色，以此估計光源）
+r_ch = color_img_cropped[:, :, 0]
+g_ch = color_img_cropped[:, :, 1]
+b_ch = color_img_cropped[:, :, 2]
+
+gray_mean = (r_ch.mean() + g_ch.mean() + b_ch.mean()) / 3
+r_wb = np.clip(r_ch * (gray_mean / r_ch.mean()), 0, 1)
+g_wb = np.clip(g_ch * (gray_mean / g_ch.mean()), 0, 1)
+b_wb = np.clip(b_ch * (gray_mean / b_ch.mean()), 0, 1)
+
+color_img_wb = np.stack([r_wb, g_wb, b_wb], axis=2)
+plt.imsave('output_wb.jpg', color_img_wb)
+print("已儲存 output_wb.jpg")
