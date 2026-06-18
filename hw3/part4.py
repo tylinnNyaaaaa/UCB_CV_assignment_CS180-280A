@@ -16,7 +16,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from part12 import inverse_warp, HW3, OUT
 
-DATA_DIR = os.path.join(HW3, 'imm_data')
+DATA_DIR = os.path.join(HW3, 'faces')
 IMM_W, IMM_H = 640, 480          # all IMM images are this size
 N_PTS = 58                        # anatomical keypoints per face
 

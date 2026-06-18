@@ -57,7 +57,7 @@ def make_caricature(img, pts, ref_mean_pts, tri, alpha):
     target_pts = pts + alpha * delta
     """
     delta = pts - ref_mean_pts
-    target_pts = ref_mean_pts + alpha * delta
+    target_pts = pts + alpha * delta
     return inverse_warp(img, pts, target_pts, tri)
 
 
@@ -89,8 +89,8 @@ def run_subject(label, img, pts, male_mean_pts, female_mean_pts,
     plt.savefig(out, dpi=150, bbox_inches='tight');  plt.close()
     print(f'Saved {out}')
 
-    # 3-way mean comparison at the largest alpha
-    cmp_alpha = alphas[-1]
+    # 3-way mean comparison at the smallest alpha
+    cmp_alpha = alphas[0]
     caric_male    = caricatures[alphas.index(cmp_alpha)]
     caric_female  = make_caricature(img, pts, female_mean_pts,  tri, cmp_alpha)
     caric_overall = make_caricature(img, pts, overall_mean_pts, tri, cmp_alpha)
