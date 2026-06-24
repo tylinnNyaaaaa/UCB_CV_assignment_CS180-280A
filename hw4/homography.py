@@ -2,9 +2,27 @@ import numpy as np
 from scipy.ndimage import map_coordinates
 
 
+def _normalize_pts(pts: np.ndarray):
+    """
+    Hartley normalization: translate centroid to origin, scale so mean
+    distance from origin = sqrt(2).  Returns (pts_norm, T) where T is the
+    3×3 normalization matrix such that pts_norm_h = T @ pts_h.
+    """
+    mean = pts.mean(axis=0)
+    dists = np.sqrt(((pts - mean) ** 2).sum(axis=1))
+    scale = np.sqrt(2) / (dists.mean() + 1e-8)
+    T = np.array([[scale, 0,     -scale * mean[0]],
+                  [0,     scale, -scale * mean[1]],
+                  [0,     0,      1.0            ]])
+    pts_h = np.hstack([pts, np.ones((len(pts), 1))])
+    pts_n = (T @ pts_h.T).T[:, :2]
+    return pts_n, T
+
+
 def computeH(im1_pts: np.ndarray, im2_pts: np.ndarray) -> np.ndarray:
     """
     Compute homography H such that p' ~ H @ p (homogeneous coords).
+    Uses Hartley normalization for numerical stability.
 
     Args:
         im1_pts: (n, 2) source (x, y) points, n >= 4
@@ -13,11 +31,12 @@ def computeH(im1_pts: np.ndarray, im2_pts: np.ndarray) -> np.ndarray:
     Returns:
         H: (3, 3) with H[2,2] = 1
     """
-    n = im1_pts.shape[0]
-    x  = im1_pts[:, 0]
-    y  = im1_pts[:, 1]
-    xp = im2_pts[:, 0]
-    yp = im2_pts[:, 1]
+    src_n, T1 = _normalize_pts(np.asarray(im1_pts, dtype=np.float64))
+    dst_n, T2 = _normalize_pts(np.asarray(im2_pts, dtype=np.float64))
+
+    n = src_n.shape[0]
+    x  = src_n[:, 0];  y  = src_n[:, 1]
+    xp = dst_n[:, 0];  yp = dst_n[:, 1]
 
     zeros = np.zeros(n)
     ones  = np.ones(n)
@@ -35,11 +54,16 @@ def computeH(im1_pts: np.ndarray, im2_pts: np.ndarray) -> np.ndarray:
 
     h, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
 
-    return np.array([
+    H_n = np.array([
         [h[0], h[1], h[2]],
         [h[3], h[4], h[5]],
         [h[6], h[7], 1.0],
     ])
+
+    # Denormalize: H_real = inv(T2) @ H_norm @ T1
+    H = np.linalg.inv(T2) @ H_n @ T1
+    H /= H[2, 2]
+    return H
 
 
 def warpImage(im: np.ndarray, H: np.ndarray) -> tuple:
